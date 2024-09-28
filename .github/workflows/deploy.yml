@@ -1,0 +1,44 @@
+name: Deploy Million Checkboxes to EC2
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Build
+      run: cargo build
+
+    - name: Cache build artifacts
+      uses: actions/cache@v3
+      with:
+        path: |
+          target/
+        key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-build-
+
+    - name: Deploy to EC2
+      env:
+        PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+        HOST: ${{ secrets.EC2_HOST }}
+        USER: ${{ secrets.EC2_USER }}
+      run: |
+        echo "$PRIVATE_KEY" > private_key
+        chmod 600 private_key
+        ssh -i private_key -o StrictHostKeyChecking=no ${USER}@${HOST} '
+          echo "Stopping existing server..."
+          pkill million-checkboxes-statemachine || true
+          sleep 5
+          echo "Existing server stopped (if it was running)"
+        '
+        scp -i private_key -o StrictHostKeyChecking=no target/release/million-checkboxes-statemachine ${USER}@${HOST}:~/rust/app/
+        ssh -i private_key -o StrictHostKeyChecking=no ${USER}@${HOST} '
+          cd ~/rust/app
+          nohup ./million-checkboxes-statemachine > output.log 2>&1 &
+        '
