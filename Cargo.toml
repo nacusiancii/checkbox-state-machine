@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 actix-web = "4.9.0"
 parking_lot = "0.12.3"
-bitvec = "1.1.0"
+bitvec = "1.0.1"
 serde = { version = "1.0", features = ["derive"] }
 rayon = "1.10.0"
 num_cpus = "1.16.0"
