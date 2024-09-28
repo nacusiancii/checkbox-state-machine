@@ -5,12 +5,6 @@ use bitvec::prelude::*;
 use serde::{Serialize, Deserialize};
 use rayon::prelude::*;
 
-const STATE_LENGTH: usize = 1_000_000;
-
-struct AppState {
-    bit_array: RwLock<BitVec>,
-}
-
 #[derive(Serialize)]
 struct SnapshotResponse {
     data: Vec<usize>,
@@ -21,24 +15,57 @@ struct FlipBitsRequest {
     indices: Vec<usize>,
 }
 
-async fn get_snapshot(data: web::Data<Arc<AppState>>) -> impl Responder {
-    let bit_array = data.bit_array.read();
-    let snapshot = SnapshotResponse {
-        data: bit_array.clone().into_vec(),
-    };
-    web::Json(snapshot)
+pub struct BitArray {
+    data: BitVec,
 }
 
+impl BitArray {
+    pub fn new(size: usize) -> Self {
+        BitArray {
+            data: bitvec![0; size],
+        }
+    }
+
+    pub fn flip(&mut self, index: usize) -> Result<(), &'static str> {
+        if index >= self.data.len() {
+            return Err("Index out of bounds");
+        }
+        let current_value = self.data[index];
+        self.data.set(index, !current_value);
+        Ok(())
+    }
+
+    pub fn flip_multiple(&mut self, indices: &[usize]) -> Result<(), &'static str> {
+        for &index in indices {
+            if index >= self.data.len() {
+                return Err("Index out of bounds");
+            }
+        }
+        for &index in indices {
+            let current_value = self.data[index];
+            self.data.set(index, !current_value);
+        }
+        Ok(())
+    }
+
+    pub fn get_snapshot(&self) -> Vec<usize> {
+        self.data.clone().into_vec()
+    }
+}
+
+// 2. Update AppState to use the new BitArray struct
+pub struct AppState {
+    bit_array: RwLock<BitArray>,
+}
+
+// 3. Update the handler functions to use the new BitArray methods
 async fn flip_bit(path: web::Path<usize>, data: web::Data<Arc<AppState>>) -> impl Responder {
     let index = path.into_inner();
-    if index >= STATE_LENGTH {
-        return HttpResponse::BadRequest().body("Index out of bounds");
-    }
-    
     let mut bit_array = data.bit_array.write();
-    let current_value = bit_array[index];
-    bit_array.set(index, !current_value);
-    HttpResponse::Ok().finish()
+    match bit_array.flip(index) {
+        Ok(_) => HttpResponse::Ok().finish(),
+        Err(msg) => HttpResponse::BadRequest().body(msg),
+    }
 }
 
 async fn flip_bits(
@@ -46,29 +73,51 @@ async fn flip_bits(
     data: web::Data<Arc<AppState>>
 ) -> impl Responder {
     let indices = &request.indices;
-    
-    // Validate all indices before proceeding
-    if indices.iter().any(|&index| index >= STATE_LENGTH) {
-        return HttpResponse::BadRequest().body("One or more indices out of bounds");
-    }
-
     let mut bit_array = data.bit_array.write();
-    
-    for &index in indices {
-        let current_value = bit_array[index];
-        bit_array.set(index, !current_value);
+    match bit_array.flip_multiple(indices) {
+        Ok(_) => HttpResponse::Ok().finish(),
+        Err(msg) => HttpResponse::BadRequest().body(msg),
     }
+}
 
-    HttpResponse::Ok().finish()
+async fn get_snapshot(data: web::Data<Arc<AppState>>) -> impl Responder {
+    let bit_array = data.bit_array.read();
+    let snapshot = SnapshotResponse {
+        data: bit_array.get_snapshot(),
+    };
+    web::Json(snapshot)
+}
+
+// New configuration struct
+struct Config {
+    state_length: usize,
+    bind_address: String,
+    workers: usize,
+}
+
+impl Config {
+    fn new() -> Self {
+        Config {
+            state_length: 1_000_000,
+            bind_address: "0.0.0.0:8080".to_string(),
+            workers: num_cpus::get() * 2,
+        }
+    }
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    // Create a new configuration
+    let config = Config::new();
+
+    // Create the BitArray with the configured size
+    let bit_array = BitArray::new(config.state_length);
+
     let app_state = Arc::new(AppState {
-        bit_array: RwLock::new(bitvec![0; STATE_LENGTH]),
+        bit_array: RwLock::new(bit_array),
     });
 
-    println!("Starting server with {} bits of state", STATE_LENGTH);
+    println!("Starting server with {} bits of state", config.state_length);
 
     HttpServer::new(move || {
         App::new()
@@ -77,8 +126,8 @@ async fn main() -> std::io::Result<()> {
             .route("/flip/{index}", web::post().to(flip_bit))
             .route("/flip_bits", web::post().to(flip_bits))
     })
-    .workers(num_cpus::get() * 2)
-    .bind("0.0.0.0:8080")?
+    .workers(config.workers)
+    .bind(&config.bind_address)?
     .run()
     .await
 }
