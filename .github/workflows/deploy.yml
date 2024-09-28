@@ -37,7 +37,7 @@ jobs:
           sleep 5
           echo "Existing server stopped (if it was running)"
         '
-        scp -i private_key -o StrictHostKeyChecking=no target/release/million-checkboxes-statemachine ${USER}@${HOST}:~/rust/app/
+        scp -i private_key -o StrictHostKeyChecking=no target/debug/million-checkboxes-statemachine ${USER}@${HOST}:~/rust/app/
         ssh -i private_key -o StrictHostKeyChecking=no ${USER}@${HOST} '
           cd ~/rust/app
           nohup ./million-checkboxes-statemachine > output.log 2>&1 &
