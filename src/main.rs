@@ -13,7 +13,7 @@ struct AppState {
 
 #[derive(Serialize)]
 struct SnapshotResponse {
-    data: Vec<u8>,
+    data: Vec<usize>,
 }
 
 #[derive(Deserialize)]
@@ -36,7 +36,8 @@ async fn flip_bit(path: web::Path<usize>, data: web::Data<Arc<AppState>>) -> imp
     }
     
     let mut bit_array = data.bit_array.write();
-    bit_array.set(index, !bit_array[index]);
+    let current_value = bit_array[index];
+    bit_array.set(index, !current_value);
     HttpResponse::Ok().finish()
 }
 
@@ -53,10 +54,10 @@ async fn flip_bits(
 
     let mut bit_array = data.bit_array.write();
     
-    // Use Rayon for parallel processing of the bit flips
-    indices.par_iter().for_each(|&index| {
-        bit_array.set(index, !bit_array[index]);
-    });
+    for &index in indices {
+        let current_value = bit_array[index];
+        bit_array.set(index, !current_value);
+    }
 
     HttpResponse::Ok().finish()
 }
