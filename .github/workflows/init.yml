@@ -12,26 +12,19 @@ jobs:
       with:
         token: ${{ secrets.PAT_TOKEN }}
 
-    - name: Set up Rust
-      uses: actions-rs/toolchain@v4
-      with:
-        profile: minimal
-        toolchain: stable
-        override: true
-
     - name: Install cargo-generate
       run: cargo install cargo-generate
 
     - name: Create Actix project
       run: |
-        cargo generate --git https://github.com/actix/actix-template.git --name my-actix-project
-        mv my-actix-project/* .
-        mv my-actix-project/.gitignore .
-        rm -rf my-actix-project
+        cargo generate --git https://github.com/actix/actix-template.git --name checkbox-state-machine
+        mv checkbox-state-machine/* .
+        mv checkbox-state-machine/.gitignore .
+        rm -rf checkbox-state-machine
 
     - name: Update Cargo.toml
       run: |
-        sed -i 's/name = "my-actix-project"/name = "${{ github.event.repository.name }}"/' Cargo.toml
+        sed -i 's/name = "checkbox-state-machine"/name = "${{ github.event.repository.name }}"/' Cargo.toml
 
     - name: Commit changes
       run: |
