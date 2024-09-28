@@ -81,10 +81,13 @@ async fn flip_bits(
 }
 
 async fn get_snapshot(data: web::Data<Arc<AppState>>) -> impl Responder {
+    println!("GET /snapshot - Request received");
     let bit_array = data.bit_array.read();
+    println!("GET /snapshot - Acquired read lock");
     let snapshot = SnapshotResponse {
         data: bit_array.get_snapshot(),
     };
+    println!("GET /snapshot - Request completed");
     web::Json(snapshot)
 }
 
