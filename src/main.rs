@@ -132,6 +132,5 @@ async fn main() -> std::io::Result<()> {
     .workers(config.workers)
     .bind(&config.bind_address)?
     .run()
-    .await?
     .await
 }
