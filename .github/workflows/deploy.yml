@@ -32,14 +32,32 @@ jobs:
       run: |
         echo "$PRIVATE_KEY" > private_key
         chmod 600 private_key
-        ssh -i private_key -o StrictHostKeyChecking=no ${USER}@${HOST} '
+                ssh -i private_key -o StrictHostKeyChecking=no ${USER}@${HOST} '
           echo "Stopping existing server..."
-          pkill -9 million-checkboxes-statemachine || true
+          pkill million-checkboxes-statemachine || true
           sleep 5
-          echo "Existing server stopped (if it was running)"
+          echo "Ensuring process is stopped..."
+          if pgrep million-checkboxes-statemachine; then
+            echo "Process still running, forcing stop..."
+            pkill -9 million-checkboxes-statemachine || true
+            sleep 2
+          fi
+          echo "Removing old binary..."
+          rm -f ~/rust/app/million-checkboxes-statemachine
         '
+        echo "Copying new binary..."
         scp -i private_key -o StrictHostKeyChecking=no target/debug/million-checkboxes-statemachine ${USER}@${HOST}:~/rust/app/
         ssh -i private_key -o StrictHostKeyChecking=no ${USER}@${HOST} '
+          echo "Starting new server..."
           cd ~/rust/app
           nohup ./million-checkboxes-statemachine > output.log 2>&1 &
+          echo "Waiting for server to start..."
+          sleep 5
+          if pgrep million-checkboxes-statemachine; then
+            echo "Server started successfully"
+          else
+            echo "Server failed to start"
+            tail -n 50 output.log
+            exit 1
+          fi
         '
