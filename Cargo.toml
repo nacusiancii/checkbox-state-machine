@@ -1,5 +1,5 @@
 [package]
-name = "million-checkboxes"
+name = "million-checkboxes-statemachine"
 version = "0.1.0"
 edition = "2021"
 
