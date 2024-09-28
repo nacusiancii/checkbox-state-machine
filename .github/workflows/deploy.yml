@@ -11,17 +11,18 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Build
-      run: cargo build
-
-    - name: Cache build artifacts
+    - name: Cache Cargo registry
       uses: actions/cache@v3
       with:
         path: |
-          target/
-        key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
-          ${{ runner.os }}-cargo-build-
+          ${{ runner.os }}-cargo-
+
+    - name: Build
+      run: cargo build
 
     - name: Deploy to EC2
       env:
@@ -33,7 +34,7 @@ jobs:
         chmod 600 private_key
         ssh -i private_key -o StrictHostKeyChecking=no ${USER}@${HOST} '
           echo "Stopping existing server..."
-          pkill million-checkboxes-statemachine || true
+          pkill -9 million-checkboxes-statemachine || true
           sleep 5
           echo "Existing server stopped (if it was running)"
         '
