@@ -130,15 +130,8 @@ async fn main() -> std::io::Result<()> {
             .route("/flip_bits", web::post().to(flip_bits))
     })
     .workers(config.workers)
-    .bind(&config.bind_address)
-    {
-        Ok(server) => {
-            println!("Server successfully bound to {}", config.bind_address);
-            server.run().await
-        },
-        Err(e) => {
-            println!("Failed to bind server to {}: {}", config.bind_address, e);
-            Err(e)
-        }
-    }
+    .bind(&config.bind_address)?
+    .run()
+    .await?
+    .await
 }
