@@ -2,7 +2,7 @@ use std::sync::Arc;
 use axum::{
     extract::{Path, State},
     routing::{get, post},
-    Json, Router,
+    Json, Router, response::IntoResponse,
 };
 use tokio::sync::RwLock;
 use bitvec::prelude::*;
@@ -62,26 +62,31 @@ type AppState = Arc<RwLock<BitArray>>;
 async fn flip_bit(
     Path(index): Path<usize>,
     State(state): State<AppState>,
-) -> Result<(), &'static str> {
+) -> impl IntoResponse {
     let mut bit_array = state.write().await;
-    bit_array.flip(index)
+    match bit_array.flip(index) {
+        Ok(_) => "OK".into_response(),
+        Err(msg) => (axum::http::StatusCode::BAD_REQUEST, msg).into_response(),
+    }
 }
 
 async fn flip_bits(
-    Json(request): Json<FlipBitsRequest>,
     State(state): State<AppState>,
-) -> Result<(), &'static str> {
+    Json(request): Json<FlipBitsRequest>,
+) -> impl IntoResponse {
     let mut bit_array = state.write().await;
-    bit_array.flip_multiple(&request.indices)
+    match bit_array.flip_multiple(&request.indices) {
+        Ok(_) => "OK".into_response(),
+        Err(msg) => (axum::http::StatusCode::BAD_REQUEST, msg).into_response(),
+    }
 }
 
-async fn get_snapshot(State(state): State<AppState>) -> Json<SnapshotResponse> {
+async fn get_snapshot(State(state): State<AppState>) -> impl IntoResponse {
     let bit_array = state.read().await;
     Json(SnapshotResponse {
         data: bit_array.get_snapshot(),
     })
 }
-
 
 struct Config {
     state_length: usize,
@@ -118,4 +123,3 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(&config.bind_address).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
-
