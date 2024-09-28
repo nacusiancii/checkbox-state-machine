@@ -1,9 +1,13 @@
-use actix_web::{web, App, HttpServer, Responder, HttpResponse};
 use std::sync::Arc;
-use parking_lot::RwLock;
+use axum::{
+    extract::{Path, State},
+    routing::{get, post},
+    Json, Router,
+};
+use tokio::sync::RwLock;
 use bitvec::prelude::*;
 use serde::{Serialize, Deserialize};
-use rayon::prelude::*;
+use tower_http::trace::TraceLayer;
 
 #[derive(Serialize)]
 struct SnapshotResponse {
@@ -53,49 +57,35 @@ impl BitArray {
     }
 }
 
-// 2. Update AppState to use the new BitArray struct
-pub struct AppState {
-    bit_array: RwLock<BitArray>,
-}
+type AppState = Arc<RwLock<BitArray>>;
 
-// 3. Update the handler functions to use the new BitArray methods
-async fn flip_bit(path: web::Path<usize>, data: web::Data<Arc<AppState>>) -> impl Responder {
-    let index = path.into_inner();
-    let mut bit_array = data.bit_array.write();
-    match bit_array.flip(index) {
-        Ok(_) => HttpResponse::Ok().finish(),
-        Err(msg) => HttpResponse::BadRequest().body(msg),
-    }
+async fn flip_bit(
+    Path(index): Path<usize>,
+    State(state): State<AppState>,
+) -> Result<(), &'static str> {
+    let mut bit_array = state.write().await;
+    bit_array.flip(index)
 }
 
 async fn flip_bits(
-    request: web::Json<FlipBitsRequest>,
-    data: web::Data<Arc<AppState>>
-) -> impl Responder {
-    let indices = &request.indices;
-    let mut bit_array = data.bit_array.write();
-    match bit_array.flip_multiple(indices) {
-        Ok(_) => HttpResponse::Ok().finish(),
-        Err(msg) => HttpResponse::BadRequest().body(msg),
-    }
+    Json(request): Json<FlipBitsRequest>,
+    State(state): State<AppState>,
+) -> Result<(), &'static str> {
+    let mut bit_array = state.write().await;
+    bit_array.flip_multiple(&request.indices)
 }
 
-async fn get_snapshot(data: web::Data<Arc<AppState>>) -> impl Responder {
-    println!("GET /snapshot - Request received");
-    let bit_array = data.bit_array.read();
-    println!("GET /snapshot - Acquired read lock");
-    let snapshot = SnapshotResponse {
+async fn get_snapshot(State(state): State<AppState>) -> Json<SnapshotResponse> {
+    let bit_array = state.read().await;
+    Json(SnapshotResponse {
         data: bit_array.get_snapshot(),
-    };
-    println!("GET /snapshot - Request completed");
-    web::Json(snapshot)
+    })
 }
 
-// New configuration struct
+
 struct Config {
     state_length: usize,
     bind_address: String,
-    workers: usize,
 }
 
 impl Config {
@@ -103,34 +93,29 @@ impl Config {
         Config {
             state_length: 1_000_000,
             bind_address: "0.0.0.0:8080".to_string(),
-            workers: num_cpus::get() * 2,
         }
     }
 }
 
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
-    // Create a new configuration
+#[tokio::main]
+async fn main() {
+    // Initialize tracing
+    tracing_subscriber::fmt::init();
+
     let config = Config::new();
-
-    // Create the BitArray with the configured size
     let bit_array = BitArray::new(config.state_length);
-
-    let app_state = Arc::new(AppState {
-        bit_array: RwLock::new(bit_array),
-    });
+    let app_state = Arc::new(RwLock::new(bit_array));
 
     println!("Starting server with {} bits of state", config.state_length);
 
-    HttpServer::new(move || {
-        App::new()
-            .app_data(web::Data::new(app_state.clone()))
-            .route("/snapshot", web::get().to(get_snapshot))
-            .route("/flip/{index}", web::post().to(flip_bit))
-            .route("/flip_bits", web::post().to(flip_bits))
-    })
-    .workers(config.workers)
-    .bind(&config.bind_address)?
-    .run()
-    .await
+    let app = Router::new()
+        .route("/snapshot", get(get_snapshot))
+        .route("/flip/:index", post(flip_bit))
+        .route("/flip_bits", post(flip_bits))
+        .layer(TraceLayer::new_for_http())
+        .with_state(app_state);
+
+    let listener = tokio::net::TcpListener::bind(&config.bind_address).await.unwrap();
+    axum::serve(listener, app).await.unwrap();
 }
+
